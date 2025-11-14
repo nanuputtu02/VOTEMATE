@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard - VoteMate</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      background-color: #f4f7fc;
+      font-family: 'Poppins', sans-serif;
+      overflow-x: hidden;
+    }
+    .container {
+      margin-top: 40px;
+      max-width: 1000px;
+    }
+    .card {
+      border: none;
+      border-radius: 15px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      margin-bottom: 30px;
+      background-color: #fff;
+      transition: all 0.3s ease;
+    }
+    .card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+    }
+    .btn-primary, .btn-danger, .btn-success {
+      border-radius: 10px;
+      padding: 8px 15px;
+      font-weight: 500;
+    }
+    .chart-container {
+      margin-top: 30px;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      position: relative;
+    }
+    .candidate-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      padding: 5px 8px;
+      border-radius: 6px;
+    }
+    .candidate-item:hover {
+      background-color: #f8f9fa;
+    }
+    .btn-smaller {
+      font-size: 0.75rem;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+    .countdown {
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.3s ease;
+    }
+    @keyframes flashRed {
+      0%, 100% { color: #dc3545; }
+      50% { color: #ffb3b3; }
+    }
+    .flash-red {
+      animation: flashRed 1s infinite;
+      font-weight: 600;
+    }
+    canvas#confettiCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+
+  <!-- Extract token -->
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenFromUrl = urlParams.get("token");
+    if (tokenFromUrl) {
+      localStorage.setItem("token", tokenFromUrl);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  </script>
+
+
+  <!-- Role check -->
+  <script>
+    const token = localStorage.getItem("token");
+    if (!token) {
+      alert("Please login as admin first!");
+      window.location.href = "main.html";
+    } else {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload.role !== "admin") {
+          alert("You are not authorized to access the admin dashboard. Redirecting...");
+          window.location.href = "voter-dashboard.html";
+        }
+      } catch (err) {
+        console.error("Invalid token:", err);
+        localStorage.removeItem("token");
+        window.location.href = "main.html";
+      }
+    }
+  </script>
+
+
+  <div class="container">
+    <!-- Create Election -->
+    <div class="card p-4 mb-4">
+      <h5 class="fw-bold text-primary mb-3">Create Election</h5>
+      <input type="text" id="title" class="form-control mb-2" placeholder="Election Title" />
+      <input type="text" id="description" class="form-control mb-2" placeholder="Description" />
+      <input type="number" id="duration" class="form-control mb-3" placeholder="Duration (in minutes)" />
+      <button id="createElectionBtn" class="btn btn-primary btn-sm">Create Election</button>
+    </div>
+
+
+    <!-- Add Candidate -->
+    <div class="card p-4 mb-4">
+      <h5 class="fw-bold text-primary mb-3">Add Candidate</h5>
+      <select id="electionSelect" class="form-select mb-2"></select>
+      <input type="text" id="candidateName" class="form-control mb-2" placeholder="Candidate Name" />
+      <select id="candidateGender" class="form-select mb-2">
+        <option value="">-- Select Gender --</option>
+        <option value="Male">Male</option>
+        <option value="Female">Female</option>
+      </select>
+      <button id="addCandidateBtn" class="btn btn-primary btn-sm">Add Candidate</button>
+    </div>
+
+
+    <!-- Active Elections -->
+    <div class="card p-4 mb-4">
+      <h5 class="fw-bold text-primary mb-3">Active Elections</h5>
+      <div id="activeElections"></div>
+    </div>
+
+
+    <!-- Results Charts -->
+    <div class="chart-container position-relative">
+      <h5 class="fw-bold text-primary mb-3">📊 Election Results</h5>
+      <canvas id="confettiCanvas"></canvas>
+      <div style="height:250px;"><canvas id="resultsChartMale"></canvas></div>
+      <div style="height:250px; margin-top:20px;"><canvas id="resultsChartFemale"></canvas></div>
+    </div>
+  </div>
+
+  <script>
+    const tokenHeader = localStorage.getItem("token");
+    const timeoutsMap = new Map();
+    let liveUpdateInterval;
+
+    async function loadElections() {
+      const res = await fetch('http://localhost:5000/api/admin/elections', {
+        headers: { 'Authorization': `Bearer ${tokenHeader}` }
+      });
+      const elections = await res.json();
+      const dropdown = document.getElementById('electionSelect');
+      dropdown.innerHTML = '<option value="">-- Select Election --</option>';
+      elections.forEach(e => {
+        const opt = document.createElement('option');
+        opt.value = e._id;
+        opt.textContent = e.title;
+        dropdown.appendChild(opt);
+      });
+    }
+
+    async function loadActiveElections() {
+      const res = await fetch('http://localhost:5000/api/admin/active-elections', {
+        headers: { 'Authorization': `Bearer ${tokenHeader}` }
+      });
+      const elections = await res.json();
+      const container = document.getElementById('activeElections');
+      if (!Array.isArray(elections) || elections.length === 0) {
+        container.innerHTML = "<p>No active elections right now.</p>";
+        return;
+      }
+
+      container.innerHTML = elections.map(e => {
+        const countdownId = `countdown-${e._id}`;
+        const male = e.candidates.filter(c => c.gender === "Male");
+        const female = e.candidates.filter(c => c.gender === "Female");
+
+        const maleHTML = male.map(c => `
+          <div class="candidate-item">
+            <span>${c.name}</span>
+            <button class="btn btn-danger btn-sm btn-smaller" onclick="deleteCandidate('${c._id}')">Delete</button>
+          </div>`).join('');
+
+        const femaleHTML = female.map(c => `
+          <div class="candidate-item">
+            <span>${c.name}</span>
+            <button class="btn btn-danger btn-sm btn-smaller" onclick="deleteCandidate('${c._id}')">Delete</button>
+          </div>`).join('');
+
+        return `
+          <div class="card p-3 mb-3">
+            <div class="card-body">
+              <h5 class="fw-bold">Title: ${e.title}</h5>
+              <p>Description: ${e.description}</p>
+              <p><strong>Start Time:</strong> ${new Date(e.startTime).toLocaleString()}</p>
+              <p class="countdown" id="${countdownId}">⏳ Calculating...</p>
+              <h6 class="text-primary mt-2">👦 Male Candidates</h6>${maleHTML || "<p>No male candidates</p>"}
+              <hr class="section-divider" />
+              <h6 class="text-danger">👩 Female Candidates</h6>${femaleHTML || "<p>No female candidates</p>"}
+              <div class="mt-3 d-flex flex-wrap gap-2">
+                <button class="btn btn-danger btn-sm" onclick="endElection('${e._id}')">End Election</button>
+                <button class="btn btn-success btn-sm" onclick="showResults('${e._id}', true)">View Graph</button>
+                <button class="btn btn-outline-danger btn-sm" onclick="deleteElection('${e._id}')">Delete Election</button>
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+
+      elections.forEach(e => {
+        startCountdown(e._id, e.startTime, e.duration);
+        scheduleAutoPopup(e._id, e.startTime, e.duration);
+      });
+    }
+
+    function startCountdown(id, start, duration) {
+      const el = document.getElementById(`countdown-${id}`);
+      const end = new Date(new Date(start).getTime() + duration * 60000);
+      function update() {
+        const diff = end - new Date();
+        if (diff <= 0) return el.textContent = "⏰ Election ended";
+        const mins = Math.floor(diff / 60000);
+        const secs = Math.floor((diff % 60000) / 1000);
+        el.textContent = `⏳ Ends in ${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')} mins`;
+        if (mins < 1) el.classList.add("flash-red");
+        else el.classList.remove("flash-red");
+        requestAnimationFrame(update);
+      }
+      update();
+    }
+
+    function scheduleAutoPopup(id, start, duration) {
+      if (timeoutsMap.has(id)) clearTimeout(timeoutsMap.get(id));
+      const end = new Date(new Date(start).getTime() + duration * 60000);
+      const ms = end - new Date();
+      if (ms <= 0) return;
+      const t = setTimeout(() => showResults(id, false, true), ms);
+      timeoutsMap.set(id, t);
+    }
+
+    async function endElection(id) {
+      if (!confirm("End this election now?")) return;
+      if (liveUpdateInterval) clearInterval(liveUpdateInterval);
+      await fetch(`http://localhost:5000/api/admin/end-election/${id}`, {
+        method: "PUT",
+        headers: { "Authorization": `Bearer ${tokenHeader}` }
+      });
+      showResults(id, false);
+    }
+
+    // DELETE Candidate (fixed)
+    async function deleteCandidate(candidateId) {
+      if (!confirm("Delete this candidate?")) return;
+      const res = await fetch(`http://localhost:5000/api/admin/delete-candidate/${candidateId}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${tokenHeader}` }
+      });
+      const result = await res.json();
+      alert(result.message || "Candidate deleted.");
+      loadActiveElections();
+    }
+
+    // DELETE Election (fixed)
+    async function deleteElection(electionId) {
+      if (!confirm("Delete this entire election?")) return;
+      const res = await fetch(`http://localhost:5000/api/admin/delete-election/${electionId}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${tokenHeader}` }
+      });
+      const result = await res.json();
+      alert(result.message || "Election deleted.");
+      loadElections();
+      loadActiveElections();
+    }
+
+    // 📊 Live-updating results
+    async function showResults(electionId, showGraphOnly = true, autoPopup = false) {
+      const res = await fetch(`http://localhost:5000/api/admin/results/${electionId}`, {
+        headers: { "Authorization": `Bearer ${tokenHeader}` }
+      });
+      const data = await res.json();
+
+      const maleCtx = document.getElementById("resultsChartMale").getContext("2d");
+      const femaleCtx = document.getElementById("resultsChartFemale").getContext("2d");
+      const confettiCanvas = document.getElementById("confettiCanvas");
+
+      if (window.chartMale) window.chartMale.destroy();
+      if (window.chartFemale) window.chartFemale.destroy();
+
+      const maxMale = Math.max(...data.maleCandidates.map(c => c.votes), 1);
+      const maxFemale = Math.max(...data.femaleCandidates.map(c => c.votes), 1);
+
+      window.chartMale = new Chart(maleCtx, {
+        type: "bar",
+        data: {
+          labels: data.maleCandidates.map(c => c.name),
+          datasets: [{
+            label: "Male CR Votes",
+            data: data.maleCandidates.map(c => c.votes),
+            backgroundColor: "rgba(26,115,232,0.7)"
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: Math.ceil(maxMale + 1) } } }
+      });
+
+      window.chartFemale = new Chart(femaleCtx, {
+        type: "bar",
+        data: {
+          labels: data.femaleCandidates.map(c => c.name),
+          datasets: [{
+            label: "Female CR Votes",
+            data: data.femaleCandidates.map(c => c.votes),
+            backgroundColor: "rgba(220,62,140,0.6)"
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: Math.ceil(maxFemale + 1) } } }
+      });
+
+      if (!showGraphOnly) {
+        showWinnerPopup(data, confettiCanvas);
+        if (autoPopup) setTimeout(() => {
+          const popup = document.getElementById("winnerPopup");
+          if (popup) popup.remove();
+        }, 2 * 60 * 1000);
+      }
+
+      // 🔁 Live refresh every 5 seconds
+      if (showGraphOnly) {
+        if (liveUpdateInterval) clearInterval(liveUpdateInterval);
+        liveUpdateInterval = setInterval(async () => {
+          const updateRes = await fetch(`http://localhost:5000/api/admin/results/${electionId}`, {
+            headers: { "Authorization": `Bearer ${tokenHeader}` }
+          });
+          const updateData = await updateRes.json();
+          window.chartMale.data.datasets[0].data = updateData.maleCandidates.map(c => c.votes);
+          window.chartFemale.data.datasets[0].data = updateData.femaleCandidates.map(c => c.votes);
+          window.chartMale.update();
+          window.chartFemale.update();
+        }, 5000);
+      }
+    }
+
+    function showWinnerPopup(data, canvas) {
+      let popup = document.getElementById("winnerPopup");
+      if (!popup) {
+        popup = document.createElement("div");
+        popup.id = "winnerPopup";
+        document.querySelector(".chart-container").appendChild(popup);
+      }
+      popup.innerHTML = `
+        <div class="card mt-4 text-center p-3" style="border-left:5px solid #0d6efd;border-radius:12px;">
+          <h5 class="fw-bold mb-2">🏆 Election Winners 🎉</h5>
+          <div class="d-flex justify-content-around">
+            <div class="p-2">
+              <h6 class="text-primary fw-bold">Male CR</h6>
+              <p class="m-0 fs-5">${data.maleWinner?.name || "No male votes yet"}</p>
+            </div>
+            <div class="p-2">
+              <h6 class="text-danger fw-bold">Female CR</h6>
+              <p class="m-0 fs-5">${data.femaleWinner?.name || "No female votes yet"}</p>
+            </div>
+          </div>
+        </div>`;
+      animateConfetti(canvas);
+    }
+
+    function animateConfetti(canvas) {
+      const ctx = canvas.getContext("2d");
+      const W = canvas.width = canvas.offsetWidth;
+      const H = canvas.height = canvas.offsetHeight;
+      const particles = [];
+      for (let i = 0; i < 120; i++) {
+        const side = i % 2 === 0 ? "left" : "right";
+        const x = side === "left" ? 0 : W;
+        const sx = side === "left" ? Math.random() * 5 + 3 : -(Math.random() * 5 + 3);
+        const color = `hsl(${Math.random() * 360},100%,70%)`;
+        particles.push({
+          x, y: H, sx, sy: -(Math.random() * 7 + 5),
+          size: Math.random() * 6 + 3, color, opacity: 1
+        });
+      }
+      function draw() {
+        ctx.clearRect(0, 0, W, H);
+        particles.forEach(p => {
+          ctx.globalAlpha = p.opacity;
+          ctx.fillStyle = p.color;
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = p.color;
+          ctx.fillRect(p.x, p.y, p.size, p.size);
+          p.x += p.sx; p.y += p.sy;
+          p.sy += 0.15;
+          p.opacity -= 0.007;
+        });
+        if (particles.some(p => p.opacity > 0)) requestAnimationFrame(draw);
+      }
+      draw();
+    }
+
+    // ✅ Reset inputs after creating election
+    document.getElementById('createElectionBtn').addEventListener('click', async () => {
+      const titleEl = document.getElementById('title');
+      const descEl = document.getElementById('description');
+      const durationEl = document.getElementById('duration');
+
+      const data = {
+        title: titleEl.value,
+        description: descEl.value,
+        durationMinutes: Number(durationEl.value)
+      };
+
+      const res = await fetch('http://localhost:5000/api/admin/create-election', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tokenHeader}` },
+        body: JSON.stringify(data)
+      });
+
+      const r = await res.json();
+      alert(r.message || "Election created ✅");
+      titleEl.value = "";
+      descEl.value = "";
+      durationEl.value = "";
+      loadElections();
+      loadActiveElections();
+    });
+
+    // ✅ Reset inputs after adding candidate
+    document.getElementById('addCandidateBtn').addEventListener('click', async () => {
+      const selectEl = document.getElementById('electionSelect');
+      const nameEl = document.getElementById('candidateName');
+      const genderEl = document.getElementById('candidateGender');
+
+      const data = {
+        electionId: selectEl.value,
+        name: nameEl.value,
+        gender: genderEl.value
+      };
+
+      const res = await fetch('http://localhost:5000/api/admin/add-candidate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tokenHeader}` },
+        body: JSON.stringify(data)
+      });
+
+      const r = await res.json();
+      alert(r.message || "Candidate added ✅");
+      selectEl.selectedIndex = 0;
+      nameEl.value = "";
+      genderEl.selectedIndex = 0;
+      loadActiveElections();
+    });
+
+    setInterval(loadActiveElections, 30000);
+    loadElections();
+    loadActiveElections();
+
+  </script>
+</body>
+</html>
