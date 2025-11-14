@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>VoteMate Main</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      box-sizing: border-box;
+      background: #f4f7fa;
+      font-family: 'Poppins', 'Segoe UI', Arial, sans-serif;
+      width: 100vw;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .title {
+      font-size: 2rem;
+      margin-bottom: 10px;
+      margin-top: 24px;
+      color: #1a237e;
+      font-weight: 700;
+      text-align: center;
+    }
+    .carousel-wrapper {
+      width: 75vw;
+      max-width: 980px;
+      min-width: 720px;
+      margin-bottom: 32px;
+      overflow: hidden;
+      position: relative;
+    }
+    .carousel {
+      display: flex;
+      gap: 32px;
+      width: max-content;
+      position: relative;
+      transition: none;
+      will-change: transform;
+    }
+    .quote-card {
+      background: #e3edfc;
+      border-radius: 13px;
+      box-shadow: 0 2px 8px rgba(60,73,102,.09);
+      padding: 28px 18px;
+      min-width: 280px;
+      width: 340px;
+      max-width: 370px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 1.11rem;
+      color: #174eaf;
+      font-weight: 500;
+      transition: transform 0.2s;
+    }
+    .quote-card:hover {
+      transform: scale(1.06);
+      background: #d2e2ff;
+    }
+    .quote-card .author {
+      margin-top: 14px;
+      font-size: 1rem;
+      color: #222;
+      font-style: italic;
+      font-weight: 400;
+    }
+    .center-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100vw;
+    }
+    .center-btn {
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      border-radius: 13px;
+      padding: 21px 70px;
+      font-size: 1.27rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin: 34px 0 36px 0;
+      box-shadow: 0 4px 16px rgba(26,115,232,0.10);
+      text-align: center;
+    }
+    .center-btn:hover {
+      background: #174eaf;
+    }
+    @media (max-width: 1000px) {
+      .carousel-wrapper { width: 94vw; min-width: 0; max-width: 97vw; }
+      .carousel { gap: 18px; }
+      .quote-card { min-width: 60vw; width: 75vw; max-width: 92vw; font-size: 1rem; padding: 18px 5vw; }
+      .center-btn { padding: 13px 8vw; font-size: 1.15rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="title">Welcome to VoteMate</div>
+
+  <!-- Top Quotes Carousel, wrapped for looped sliding -->
+  <div class="carousel-wrapper">
+    <div class="carousel" id="top-carousel">
+      <div class="quote-card">
+        "The ballot is stronger than the bullet."
+        <div class="author">- Abraham Lincoln</div>
+      </div>
+      <div class="quote-card">
+        "Every vote counts. Your voice matters."
+        <div class="author">- VoteMate</div>
+      </div>
+      <div class="quote-card">
+        "Leadership is not a position or a title, it is action and example."
+        <div class="author">- Donald McGannon</div>
+      </div>
+      <div class="quote-card">
+        "Leaders become great not because of their power, but because of their ability to empower others."
+        <div class="author">- John Maxwell</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Central Button -->
+  <div class="center-content">
+    <button class="center-btn" onclick="window.location.href='http://localhost:5000/auth/google'">
+      CLICK HERE TO START VOTING
+    </button>
+  </div>
+
+  <!-- Bottom Quotes Carousel, wrapped for looped sliding -->
+  <div class="carousel-wrapper">
+    <div class="carousel" id="bottom-carousel">
+      <div class="quote-card">
+        "Be the change you wish to see in the world."
+        <div class="author">- Mahatma Gandhi</div>
+      </div>
+      <div class="quote-card">
+        "Your vote is your voice. Make it heard."
+        <div class="author">- VoteMate</div>
+      </div>
+      <div class="quote-card">
+        "Great leaders inspire action, not just words."
+        <div class="author">- VoteMate</div>
+      </div>
+      <div class="quote-card">
+        "Voting is not only a right, it is a responsibility."
+        <div class="author">- VoteMate</div>
+      </div>
+    </div>
+  </div>
+<script>
+  // Infinite loop carousel using transform, only clone once!
+  function loopCarousel(carouselId, speed = 0.7) {
+    const carousel = document.getElementById(carouselId);
+    let px = 0;
+    let totalWidth;
+
+    // Only clone once!
+    if (!carousel.hasCloned) {
+      const originalLength = carousel.children.length;
+      for (let i = 0; i < originalLength; i++) {
+        carousel.appendChild(carousel.children[i].cloneNode(true));
+      }
+      carousel.hasCloned = true;
+    }
+    totalWidth = carousel.scrollWidth / 2;
+
+    function animate() {
+      px += speed;
+      if (px >= totalWidth) px = 0;
+      carousel.style.transform = `translateX(-${px}px)`;
+      requestAnimationFrame(animate);
+    }
+    animate();
+
+    // Adapt on resize, but not every frame
+    window.addEventListener("resize", () => {
+      totalWidth = carousel.scrollWidth / 2;
+      px = 0;
+      carousel.style.transform = `translateX(0px)`;
+    });
+  }
+
+  loopCarousel('top-carousel', 0.7);
+  loopCarousel('bottom-carousel', 0.7);
+</script>
+</body>
+</html>
